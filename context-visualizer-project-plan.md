@@ -1,4 +1,4 @@
-# MemoryMirror
+# context-visualizer
 ## Visualizing and Calibrating AI User Models
 
 ### Project Overview
@@ -24,7 +24,7 @@ Users cannot easily answer:
 | What information is wrong? | Difficult to inspect |
 | How can I correct it? | Limited control |
 
-MemoryMirror explores whether exposing this model improves user understanding and calibration.
+context-visualizer explores whether exposing this model improves user understanding and calibration.
 
 ---
 
