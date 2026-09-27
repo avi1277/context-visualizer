@@ -1,8 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
-import type { GraphData, NodeObject } from "react-force-graph-2d";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ForceGraphMethods, GraphData, NodeObject } from "react-force-graph-2d";
 import type { MemoryLink, MemoryNode } from "@/lib/memories";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -11,9 +11,9 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
 });
 
 const categoryColors: Record<MemoryNode["category"], string> = {
-  Profile: "#4f46e5",
-  Education: "#0f766e",
-  Goals: "#c2410c",
+  Profile: "#9b8cff",
+  Education: "#40edcf",
+  Goals: "#ff956e",
 };
 
 type Props = {
@@ -25,6 +25,7 @@ type Props = {
 
 export default function MemoryGraph({ memories, relationships, selectedMemoryId, onSelectMemory }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const graphRef = useRef<ForceGraphMethods | undefined>(undefined);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -41,52 +42,89 @@ export default function MemoryGraph({ memories, relationships, selectedMemoryId,
     return () => observer.disconnect();
   }, []);
 
-  const graphData: GraphData<MemoryNode, MemoryLink> = { nodes: memories, links: relationships };
+  const graphData = useMemo<GraphData<MemoryNode, MemoryLink>>(
+    () => ({ nodes: memories, links: relationships }),
+    [memories, relationships],
+  );
+
+  useEffect(() => {
+    const linkForce = graphRef.current?.d3Force("link");
+    const chargeForce = graphRef.current?.d3Force("charge");
+    linkForce?.distance(165);
+    chargeForce?.strength(-260);
+    graphRef.current?.d3ReheatSimulation();
+  }, [dimensions.width, memories.length]);
 
   return (
-    <div ref={containerRef} className="relative h-[460px] w-full overflow-hidden rounded-xl bg-slate-50">
+    <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-transparent">
       {dimensions.width > 0 && dimensions.height > 0 && (
         <ForceGraph2D
+          ref={graphRef}
           graphData={graphData}
           width={dimensions.width}
           height={dimensions.height}
-          backgroundColor="#f8fafc"
+          backgroundColor="transparent"
           nodeId="id"
           nodeRelSize={6}
-          nodeVal={(node: NodeObject<MemoryNode>) => (node.category === "Profile" ? 2 : 1)}
-          nodeColor={(node: NodeObject<MemoryNode>) => categoryColors[node.category]}
-          nodeLabel={(node: NodeObject<MemoryNode>) => `${node.text} · ${node.category}`}
-          nodeCanvasObjectMode={() => "after"}
-          nodeCanvasObject={(node: NodeObject<MemoryNode>, context, globalScale) => {
+          nodeVal={(rawNode) => ((rawNode as NodeObject<MemoryNode>).category === "Profile" ? 2 : 1)}
+          nodeColor={(rawNode) => categoryColors[(rawNode as NodeObject<MemoryNode>).category]}
+          nodeLabel={(rawNode) => {
+            const node = rawNode as NodeObject<MemoryNode>;
+            return `${node.text} · ${node.category}`;
+          }}
+          nodeCanvasObjectMode={() => "replace"}
+          nodeCanvasObject={(rawNode, context, globalScale) => {
+            const node = rawNode as NodeObject<MemoryNode>;
             if (node.x === undefined || node.y === undefined) return;
             const isSelected = node.id === selectedMemoryId;
-            const radius = node.category === "Profile" ? 8 : 6;
+            const radiusPx = node.category === "Profile" ? 10 : 8;
+            const radius = radiusPx / globalScale;
+            const color = categoryColors[node.category];
+
+            context.save();
             context.beginPath();
-            context.arc(node.x, node.y, radius + (isSelected ? 3 : 0), 0, 2 * Math.PI);
-            context.fillStyle = categoryColors[node.category];
+            context.arc(node.x, node.y, radius + (isSelected ? 3 / globalScale : 0), 0, 2 * Math.PI);
+            context.shadowColor = color;
+            context.shadowBlur = 20 / globalScale;
+            context.fillStyle = color;
             context.fill();
+            context.shadowBlur = 0;
+
+            context.beginPath();
+            context.arc(node.x, node.y, 3 / globalScale, 0, 2 * Math.PI);
+            context.fillStyle = "#ffffff";
+            context.fill();
+
             if (isSelected) {
-              context.strokeStyle = "#c7d2fe";
-              context.lineWidth = 2 / globalScale;
+              context.beginPath();
+              context.arc(node.x, node.y, radius + 5 / globalScale, 0, 2 * Math.PI);
+              context.strokeStyle = "rgba(255,255,255,0.72)";
+              context.lineWidth = 1.2 / globalScale;
               context.stroke();
             }
 
-            const fontSize = Math.max(11 / globalScale, 3.5);
-            context.font = `${isSelected ? "600" : "500"} ${fontSize}px Arial, sans-serif`;
+            const fontSize = 11 / globalScale;
+            context.font = `${isSelected ? "600" : "500"} ${fontSize}px Arial, Helvetica, sans-serif`;
             context.textAlign = "center";
             context.textBaseline = "top";
-            context.fillStyle = "#1e293b";
-            context.fillText(node.text, node.x, node.y + radius + 5);
+            context.fillStyle = "rgba(255,255,255,0.9)";
+            context.shadowColor = "rgba(0,0,0,0.95)";
+            context.shadowBlur = 4 / globalScale;
+            context.fillText(node.text, node.x, node.y + radius + 8 / globalScale);
+            context.restore();
           }}
-          linkColor={() => "#cbd5e1"}
-          linkWidth={1.5}
+          linkColor={() => "rgba(255,255,255,0.42)"}
+          linkWidth={0.8}
           linkLabel={(link) => link.relationship}
           onNodeClick={(node) => {
             const memory = memories.find((item) => item.id === node.id) ?? null;
             onSelectMemory(memory);
           }}
           onBackgroundClick={() => onSelectMemory(null)}
-          cooldownTicks={100}
+          cooldownTicks={120}
+          d3AlphaDecay={0.025}
+          minZoom={0.5}
+          maxZoom={2.5}
           enableNodeDrag
         />
       )}
